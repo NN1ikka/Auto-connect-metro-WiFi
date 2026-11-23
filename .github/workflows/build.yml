@@ -1,57 +1,70 @@
 name: Build Metro AutoConnect APK
-
 on:
   push:
     branches: [main]
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Extract Android project
         shell: bash
         run: |
           archive="$(find . -maxdepth 1 -type f -iname 'MetroAutoConnect*.zip' | sort | head -n 1)"
           if [ -z "$archive" ]; then
-            echo 'ERROR: MetroAutoConnect ZIP not found in repository root.' >&2
+            echo 'ERROR: MetroAutoConnect ZIP not found.' >&2
             exit 1
           fi
-          echo "Extracting $archive"
           unzip -q "$archive"
           test -f MetroAutoConnect/settings.gradle
-
+      - name: Fix unsupported Android API calls
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('MetroAutoConnect/app/src/main/java/com/metrolink/autoconnect')
+          fixes = {
+              'MainActivity.java': (
+                  'connectivity.startCaptivePortalApp(network);',
+                  'openIntent(new Intent(Intent.ACTION_VIEW, Uri.parse("https://gowifi.ru")));'
+              ),
+              'PortalActivity.java': (
+                  'connectivity.startCaptivePortalApp(wifi);',
+                  'startActivity(new Intent(Settings.ACTION_WIFI_SETTINGS));'
+              ),
+          }
+          for filename, (old, new) in fixes.items():
+              path = root / filename
+              source = path.read_text(encoding='utf-8')
+              if source.count(old) != 1:
+                  raise SystemExit(f'Expected API call not found exactly once in {path}')
+              path.write_text(source.replace(old, new), encoding='utf-8')
+              print(f'Fixed: {path}')
+          PY
       - name: Install Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
       - name: Check Android SDK and install platform
         shell: bash
         run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           if [ ! -x "$SDKMANAGER" ]; then
             SDKMANAGER="$(command -v sdkmanager)"
           fi
           "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --install 'platforms;android-35' 'build-tools;35.0.0'
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-
       - name: Compile APK
         working-directory: MetroAutoConnect
         run: gradle --no-daemon :app:assembleDebug
-
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
