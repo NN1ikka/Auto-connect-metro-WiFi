@@ -1,4 +1,4 @@
-name: Build Metro AutoConnect v1.4 APK
+name: Build Metro AutoConnect v2.0 APK
 
 on:
   push:
@@ -15,21 +15,25 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Extract v1.4 Android project
+      - name: Extract v2.0 source archive
         shell: bash
         run: |
           set -euo pipefail
-          unzip -oq MetroAutoConnect-v1.4-AndroidStudio.zip
-          test -f MetroAutoConnect/settings.gradle
-          grep -q "versionName '1.4.0'" MetroAutoConnect/app/build.gradle
+          test -f MetroAutoConnect-v2.0-AndroidStudio.zip || {
+            echo "The MetroAutoConnect-v2.0-AndroidStudio.zip file is missing from the root of the repository." >&2
+            exit 1
+          }
+          unzip -oq MetroAutoConnect-v2.0-AndroidStudio.zip
+          test -f MetroAutoConnect/app/build.gradle
+          grep -q "versionName '2.0.0'" MetroAutoConnect/app/build.gradle
 
-      - name: Install Java 17
+      - name: Install JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Prepare Android SDK
+      - name: Install Android SDK platform
         shell: bash
         run: |
           set -euo pipefail
@@ -37,18 +41,18 @@ jobs:
           if [ ! -x "$manager" ]; then manager="$(command -v sdkmanager)"; fi
           "$manager" --sdk_root="$ANDROID_HOME" --install 'platforms;android-35' 'build-tools;35.0.0'
 
-      - name: Set up Gradle
+      - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Compile APK
+      - name: Build APK
         working-directory: MetroAutoConnect
-        run: gradle --no-daemon :app:assembleDebug
+        run: gradle --no-daemon --stacktrace :app:assembleDebug
 
-      - name: Upload APK
+      - name: Upload installable APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MetroAutoConnect-v1.4-APK
+          name: MetroAutoConnect-v2-APK
           path: MetroAutoConnect/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
